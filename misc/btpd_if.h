@@ -69,7 +69,7 @@ typedef void (*tget_cb_t)(int obji, enum ipc_err objerr,
 
 //typedef void (*dget_cb_t)(struct ipc_get_res *res, size_t nres, void *arg);
 
-int ipc_open(const char *dir, struct ipc **out);
+int ipc_open(const char *address, struct ipc **out);
 void ipc_close(struct ipc *ipc);
 
 const char *ipc_strerror(enum ipc_err err);

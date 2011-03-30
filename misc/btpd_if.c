@@ -1,6 +1,10 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/stat.h>
+
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include <assert.h>
 #include <ctype.h>
@@ -51,22 +55,39 @@ tval_name(enum ipc_tval key)
 }
 
 int
-ipc_open(const char *dir, struct ipc **out)
+ipc_open(const char *address, struct ipc **out)
 {
     int sd = -1, err = 0;
     size_t plen;
     struct ipc *res;
-    struct sockaddr_un addr;
+    struct sockaddr_un un_addr;
+    struct sockaddr_in in_addr;
+    struct sockaddr *addr = NULL;
+    struct stat buf;
+    int pf = -1;
+    int afsz = 0;
 
-    plen = sizeof(addr.sun_path);
-    if (snprintf(addr.sun_path, plen, "%s/sock", dir) >= plen)
-        return ENAMETOOLONG;
-    addr.sun_family = AF_UNIX;
+    if (stat(address, &buf) == 0) {
+        plen = sizeof(un_addr.sun_path);
+        if (snprintf(un_addr.sun_path, plen, "%s/sock", address) >= plen)
+            return ENAMETOOLONG;
+        un_addr.sun_family = AF_UNIX;
+        pf = PF_UNIX;
+        addr =(struct sockaddr*)&un_addr;
+        afsz = sizeof(un_addr);
+    } else if (inet_aton(address, &in_addr.sin_addr) != 0) {
+        in_addr.sin_family = AF_INET;
+        in_addr.sin_port = htons(12345);
+        addr = (struct sockaddr*)&in_addr;
+        pf = PF_INET;
+        afsz = sizeof(in_addr);
+    } else
+        return EINVAL;
 
-    if ((sd = socket(PF_UNIX, SOCK_STREAM, 0)) == -1)
+    if ((sd = socket(pf, SOCK_STREAM, 0)) == -1)
         return errno;
 
-    if (connect(sd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
+    if (connect(sd, addr, afsz) == -1) {
         err = errno;
         close(sd);
         return err;

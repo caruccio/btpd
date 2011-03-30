@@ -9,8 +9,10 @@ struct cli {
     struct fdev read;
 };
 
-static int m_listen_sd;
-static struct fdev m_cli_incoming;
+static int m_listen_sd_unix;
+static int m_listen_sd_inet;
+static struct fdev m_cli_incoming_unix;
+static struct fdev m_cli_incoming_inet;
 
 static int
 write_buffer(struct cli *cli, struct iobuf *iob)
@@ -497,6 +499,7 @@ client_connection_cb(int sd, short type, void *arg)
     int nsd;
 
     if ((nsd = accept(sd, NULL, NULL)) < 0) {
+//        if ((nsd = accept4(sd, NULL, NULL, SOCK_NONBLOCK)) < 0) {
         if (errno == EWOULDBLOCK || errno == ECONNABORTED)
             return;
         else
@@ -514,12 +517,14 @@ client_connection_cb(int sd, short type, void *arg)
 void
 ipc_shutdown(void)
 {
-    btpd_ev_del(&m_cli_incoming);
-    close(m_listen_sd);
+    btpd_ev_del(&m_cli_incoming_unix);
+    btpd_ev_del(&m_cli_incoming_inet);
+    close(m_listen_sd_unix);
+    close(m_listen_sd_inet);
 }
 
-void
-ipc_init(void)
+static int
+ipc_init_unix(void)
 {
     int sd;
     struct sockaddr_un addr;
@@ -545,6 +550,36 @@ ipc_init(void)
     listen(sd, 4);
     set_nonblocking(sd);
 
-    btpd_ev_new(&m_cli_incoming, sd, EV_READ, client_connection_cb, NULL);
-    m_listen_sd = sd;
+    btpd_ev_new(&m_cli_incoming_unix, sd, EV_READ, client_connection_cb, NULL);
+    return sd;
 }
+
+static int
+ipc_init_inet(void)
+{
+    int sd;
+    struct sockaddr_in addr;
+
+    addr.sin_family = PF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(12345);
+
+    if ((sd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+        btpd_err("sock: %s\n", strerror(errno));
+    if (bind(sd, (struct sockaddr *)&addr, sizeof(addr)) != 0)
+        btpd_err("bind: %s\n", strerror(errno));
+
+    listen(sd, 4);
+    set_nonblocking(sd);
+
+    btpd_ev_new(&m_cli_incoming_inet, sd, EV_READ, client_connection_cb, NULL);
+    return sd;
+}
+
+void
+ipc_init(void)
+{
+    m_listen_sd_unix = ipc_init_unix();
+    m_listen_sd_inet = ipc_init_inet();
+}
+
